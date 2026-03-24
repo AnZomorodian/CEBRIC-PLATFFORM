@@ -1,0 +1,1776 @@
+import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { F1SessionResponse } from "@shared/schema";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, ReferenceLine } from 'recharts';
+
+interface AdvancedAnalysisProps {
+  sessionData: F1SessionResponse | null;
+  filters: { year: string; gp: string; session: string; drivers: string[] };
+  excludeMetrics?: string[];
+}
+
+export default function AdvancedAnalysis({ sessionData, filters, excludeMetrics }: AdvancedAnalysisProps) {
+  const [selectedDriver, setSelectedDriver] = useState<string>("");
+  const [selectedLap, setSelectedLap] = useState<string>("");
+  const [analysisType, setAnalysisType] = useState<'downforce' | 'corners' | 'brake' | 'tire' | 'energy' | 'weather' | 'pitstop' | 'drs' | 'strategy'>('downforce');
+  const [analysisData, setAnalysisData] = useState<any>(null);
+  const [viewMode, setViewMode] = useState<'race' | 'lap' | 'weather'>('race');
+  const [weatherData, setWeatherData] = useState<any>(null);
+  const { toast } = useToast();
+
+  const loadAnalysisMutation = useMutation({
+    mutationFn: async (params: { type: string; year: number; gp: string; session: string; driver: string; lap: number }) => {
+      const endpoint = params.type === 'downforce' ? '/api/f1/downforce-analysis' :
+                       params.type === 'corners' ? '/api/f1/corner-analysis' :
+                       params.type === 'tire' ? '/api/f1/tire-analysis' :
+                       params.type === 'energy' ? '/api/f1/energy-analysis' :
+                       params.type === 'weather' ? '/api/f1/weather-analysis' :
+                       params.type === 'pitstop' ? '/api/f1/pitstop-analysis' :
+                       params.type === 'drs' ? '/api/f1/drs-analysis' :
+                       params.type === 'strategy' ? '/api/f1/strategy-analysis' :
+                       '/api/f1/brake-analysis';
+      const response = await apiRequest("POST", endpoint, params);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setAnalysisData(data);
+      toast({
+        title: "Analysis Loaded",
+        description: "Advanced analysis data loaded successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error Loading Analysis",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleLoadAnalysis = () => {
+    const sessionOnlyTypes: string[] = [];
+    const needsDriverAndLap = !sessionOnlyTypes.includes(analysisType);
+
+    if (!filters.year || !filters.gp || !filters.session) {
+      toast({
+        title: "Missing Parameters",
+        description: "Please select year, GP, and session",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (needsDriverAndLap && (!selectedDriver || !selectedLap)) {
+      toast({
+        title: "Missing Parameters",
+        description: "Please select driver and lap for this analysis type",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    loadAnalysisMutation.mutate({
+      type: analysisType,
+      year: parseInt(filters.year),
+      gp: filters.gp,
+      session: filters.session,
+      driver: selectedDriver,
+      lap: parseInt(selectedLap),
+    });
+  };
+
+  const loadWeatherMutation = useMutation({
+    mutationFn: async (params: { year: number; gp: string; session: string }) => {
+      const response = await apiRequest("POST", "/api/f1/weather-analysis", { 
+        ...params, 
+        driver: "", 
+        lap: 0 
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setWeatherData(data);
+      toast({
+        title: "Weather Data Loaded",
+        description: "Session weather conditions loaded successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error Loading Weather",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleLoadWeather = () => {
+    if (!filters.year || !filters.gp || !filters.session) {
+      toast({
+        title: "Missing Parameters",
+        description: "Please load session data first",
+        variant: "destructive",
+      });
+      return;
+    }
+    loadWeatherMutation.mutate({
+      year: parseInt(filters.year),
+      gp: filters.gp,
+      session: filters.session,
+    });
+  };
+
+  const availableDrivers = sessionData?.drivers || [];
+  const maxLap = sessionData?.statistics.totalLaps || 50;
+  const lapOptions = Array.from({ length: maxLap }, (_, i) => i + 1);
+
+  // Calculate race average statistics
+  const raceAverages = sessionData?.laps ? {
+    avgSpeed: sessionData.laps.reduce((sum, lap) => sum + (lap.lapTime > 0 ? 1 : 0), 0) > 0 
+      ? sessionData.statistics.avgLapTime : 0,
+    topSpeed: sessionData.statistics.topSpeed.value,
+    totalLaps: sessionData.statistics.totalLaps,
+    fastestLap: sessionData.statistics.fastestLap.time,
+  } : null;
+
+  return (
+    <Card className="mt-6" data-testid="advanced-analysis">
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between">
+          <div className="flex items-center">
+            <i className="fas fa-chart-area text-primary mr-2"></i>
+            Advanced Analysis
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant={viewMode === 'race' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('race')}
+            >
+              Race Averages
+            </Button>
+            <Button
+              variant={viewMode === 'lap' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('lap')}
+            >
+              Lap Analysis
+            </Button>
+            <Button
+              variant={viewMode === 'weather' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('weather')}
+            >
+              Race Weather
+            </Button>
+          </div>
+        </CardTitle>
+        <CardDescription>
+          {viewMode === 'race' ? 'Overall race statistics and averages' : 
+           viewMode === 'lap' ? 'Detailed lap-by-lap analysis' :
+           'Weather conditions throughout the session'}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {viewMode === 'race' ? (
+          // Race Averages Section
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Average Lap Time</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-primary">
+                    {sessionData?.statistics.avgLapTime 
+                      ? `${sessionData.statistics.avgLapTime.toFixed(3)}s`
+                      : 'N/A'}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">All drivers average</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Lap Time Variance</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-secondary">
+                    {sessionData?.laps 
+                      ? `${(sessionData.laps.filter(l => l.lapTime > 0).reduce((sum, l) => sum + Math.pow(l.lapTime - sessionData.statistics.avgLapTime, 2), 0) / sessionData.laps.filter(l => l.lapTime > 0).length).toFixed(3)}s²`
+                      : 'N/A'}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">Consistency metric</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Active Drivers</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-accent">
+                    {sessionData?.drivers.length || 0}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">In session</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Total Distance</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {sessionData?.laps && sessionData.laps.length > 0
+                      ? `${(sessionData.statistics.totalLaps || 0 * 5).toFixed(0)} km`
+                      : 'N/A'}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">Approx. track length × laps</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Fastest Lap</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-primary">
+                    {sessionData?.statistics.fastestLap.time 
+                      ? `${sessionData.statistics.fastestLap.time.toFixed(3)}s`
+                      : 'N/A'}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {sessionData?.statistics.fastestLap.driver || 'No data'}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Top Speed</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-secondary">
+                    {sessionData?.statistics.topSpeed.value 
+                      ? `${sessionData.statistics.topSpeed.value.toFixed(1)} km/h`
+                      : 'N/A'}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {sessionData?.statistics.topSpeed.driver || 'No data'}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Average Speed</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-accent">
+                    {sessionData?.laps && sessionData.laps.length > 0
+                      ? `${(sessionData.laps.filter(l => l.lapTime > 0).reduce((sum, l) => {
+                          const trackLength = 5000;
+                          const speed = trackLength / l.lapTime * 3.6;
+                          return sum + speed;
+                        }, 0) / sessionData.laps.filter(l => l.lapTime > 0).length).toFixed(1)} km/h`
+                      : 'N/A'}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">Overall session average</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Session Duration</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {sessionData?.laps && sessionData.laps.length > 0
+                      ? `${Math.floor(sessionData.laps.filter(l => l.lapTime > 0).reduce((sum, l) => sum + l.lapTime, 0) / 60)} min`
+                      : 'N/A'}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">Total race time</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {sessionData?.laps && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <i className="fas fa-chart-bar text-primary"></i>
+                      Lap Time Distribution
+                    </span>
+                  </CardTitle>
+                  <CardDescription>
+                    Comprehensive analysis of driver lap times including best lap, average pace, median performance, and consistency variance
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <ResponsiveContainer width="100%" height={350}>
+                    <BarChart data={sessionData.drivers.map(driver => {
+                      const driverLaps = sessionData.laps.filter(l => l.driver === driver && l.lapTime > 0);
+                      const sortedLaps = [...driverLaps.map(l => l.lapTime)].sort((a, b) => a - b);
+                      const median = sortedLaps.length > 0 
+                        ? sortedLaps.length % 2 === 0 
+                          ? (sortedLaps[sortedLaps.length / 2 - 1] + sortedLaps[sortedLaps.length / 2]) / 2
+                          : sortedLaps[Math.floor(sortedLaps.length / 2)]
+                        : 0;
+                      const avg = driverLaps.length > 0 
+                        ? driverLaps.reduce((sum, l) => sum + l.lapTime, 0) / driverLaps.length 
+                        : 0;
+                      const variance = driverLaps.length > 0
+                        ? Math.sqrt(driverLaps.reduce((sum, l) => sum + Math.pow(l.lapTime - avg, 2), 0) / driverLaps.length)
+                        : 0;
+                      return {
+                        driver,
+                        avgLap: avg,
+                        bestLap: driverLaps.length > 0 
+                          ? Math.min(...driverLaps.map(l => l.lapTime)) 
+                          : 0,
+                        medianLap: median,
+                        variance: variance,
+                      };
+                    })}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                      <XAxis 
+                        dataKey="driver" 
+                        tick={{ fill: '#A0A0A0', fontSize: 11 }}
+                        stroke="rgba(255,255,255,0.2)"
+                      />
+                      <YAxis 
+                        tick={{ fill: '#A0A0A0', fontSize: 11 }}
+                        stroke="rgba(255,255,255,0.2)"
+                        tickFormatter={(value) => `${value.toFixed(2)}s`}
+                      />
+                      <Tooltip 
+                        formatter={(value) => `${Number(value).toFixed(3)}s`}
+                        contentStyle={{ 
+                          backgroundColor: 'rgba(18, 18, 20, 0.95)', 
+                          border: '1px solid rgba(0, 217, 255, 0.3)',
+                          borderRadius: '8px'
+                        }}
+                        labelStyle={{ color: '#00d9ff', fontWeight: 'bold' }}
+                      />
+                      <Legend 
+                        wrapperStyle={{ paddingTop: '10px' }}
+                        iconType="circle"
+                      />
+                      <Bar dataKey="bestLap" fill="#00d9ff" name="Best Lap" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="medianLap" fill="#fbbf24" name="Median Lap" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="avgLap" fill="#ff3853" name="Avg Lap" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="variance" fill="#22c55e" name="Std Deviation" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+
+                  {/* Performance Metrics Summary */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                    <div className="p-3 bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg border border-primary/30 text-center">
+                      <div className="flex items-center justify-center gap-2 mb-1">
+                        <div className="w-3 h-3 rounded-full bg-primary"></div>
+                        <p className="text-xs text-muted-foreground">Best Lap</p>
+                      </div>
+                      <p className="text-sm text-primary font-semibold">Ultimate pace achieved</p>
+                    </div>
+                    <div className="p-3 bg-gradient-to-br from-yellow-500/20 to-yellow-500/5 rounded-lg border border-yellow-500/30 text-center">
+                      <div className="flex items-center justify-center gap-2 mb-1">
+                        <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                        <p className="text-xs text-muted-foreground">Median Lap</p>
+                      </div>
+                      <p className="text-sm text-yellow-400 font-semibold">Middle performance value</p>
+                    </div>
+                    <div className="p-3 bg-gradient-to-br from-red-500/20 to-red-500/5 rounded-lg border border-red-500/30 text-center">
+                      <div className="flex items-center justify-center gap-2 mb-1">
+                        <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                        <p className="text-xs text-muted-foreground">Avg Lap</p>
+                      </div>
+                      <p className="text-sm text-red-400 font-semibold">Overall race pace</p>
+                    </div>
+                    <div className="p-3 bg-gradient-to-br from-green-500/20 to-green-500/5 rounded-lg border border-green-500/30 text-center">
+                      <div className="flex items-center justify-center gap-2 mb-1">
+                        <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                        <p className="text-xs text-muted-foreground">Std Deviation</p>
+                      </div>
+                      <p className="text-sm text-green-400 font-semibold">Consistency variance</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        ) : viewMode === 'lap' ? (
+          // Lap-by-Lap Analysis Section
+          <div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-2">Analysis Type</label>
+                <Select value={analysisType} onValueChange={(value: any) => setAnalysisType(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select type..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="downforce">Downforce</SelectItem>
+                    <SelectItem value="corners">Corner Analysis</SelectItem>
+                    <SelectItem value="brake">Brake Analysis</SelectItem>
+                    <SelectItem value="tire">Tire Degradation</SelectItem>
+                    <SelectItem value="energy">Energy Management</SelectItem>
+                    <SelectItem value="drs">DRS Zone Analysis</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-2">Driver</label>
+                <Select value={selectedDriver} onValueChange={setSelectedDriver}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select driver..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableDrivers.map((driver) => (
+                      <SelectItem key={driver} value={driver}>{driver}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-2">Lap</label>
+                <div className="flex gap-2">
+                  <Select value={selectedLap} onValueChange={setSelectedLap}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Select lap..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {lapOptions.map((lap) => (
+                        <SelectItem key={lap} value={lap.toString()}>{lap}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {sessionData?.statistics.fastestLap && selectedDriver && (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => {
+                        const validLaps = sessionData.laps.filter(lap => lap.driver === selectedDriver && lap.lapTime > 0);
+                        if (validLaps.length === 0) {
+                          toast({
+                            title: "No valid laps",
+                            description: "No completed laps found for this driver",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+                        const minTime = Math.min(...validLaps.map(lap => lap.lapTime));
+                        const fastestLapData = validLaps.find(l => l.lapTime === minTime);
+                        if (fastestLapData) {
+                          setSelectedLap(fastestLapData.lapNumber.toString());
+                        }
+                      }}
+                      title="Select fastest lap for this driver"
+                      data-testid="button-fastest-lap-analysis"
+                    >
+                      <i className="fas fa-bolt text-yellow-500"></i>
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-end md:col-span-2">
+                <Button onClick={handleLoadAnalysis} disabled={loadAnalysisMutation.isPending} className="w-full">
+                  {loadAnalysisMutation.isPending ? <i className="fas fa-spinner loading-spinner"></i> : "Load Analysis"}
+                </Button>
+              </div>
+            </div>
+
+            {!analysisData ? (
+              <div className="text-center py-12">
+                <i className="fas fa-chart-line text-6xl text-muted mb-4"></i>
+                <p className="text-muted-foreground">Select analysis type and parameters to view detailed insights</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Downforce Analysis */}
+                {analysisType === 'downforce' && analysisData.downforceIndex !== undefined && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">Downforce Index</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-3xl font-bold text-primary">{analysisData.downforceIndex.toFixed(1)}</div>
+                        <p className="text-xs text-muted-foreground mt-1">Relative downforce level (0-100)</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">High Speed Avg</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-3xl font-bold text-secondary">{analysisData.highSpeedAvg.toFixed(1)} km/h</div>
+                        <p className="text-xs text-muted-foreground mt-1">Average in high-speed sections</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">Aero Efficiency</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-3xl font-bold text-accent">{analysisData.aerodynamicEfficiency.toFixed(2)}</div>
+                        <p className="text-xs text-muted-foreground mt-1">Speed/variance ratio</p>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+
+                {/* Corner Analysis */}
+                {analysisType === 'corners' && analysisData.corners && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Corner Performance Breakdown ({analysisData.corners.length} corners detected)</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        {analysisData.corners.map((corner: any) => (
+                          <div key={corner.cornerNumber} className="p-4 bg-muted/30 rounded-lg border border-border">
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="font-semibold flex items-center gap-2">
+                                Corner {corner.cornerNumber}
+                                <span className={`text-xs px-2 py-1 rounded ${
+                                  corner.type === 'slow' ? 'bg-red-500/20 text-red-400' :
+                                  corner.type === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
+                                  'bg-green-500/20 text-green-400'
+                                }`}>
+                                  {corner.type.toUpperCase()}
+                                </span>
+                              </h4>
+                              <span className="text-sm text-muted-foreground">Δ {corner.speedDelta.toFixed(1)} km/h</span>
+                            </div>
+                            <div className="grid grid-cols-5 gap-4 text-sm">
+                              <div>
+                                <p className="text-muted-foreground">Brake Point</p>
+                                <p className="font-mono text-lg">{corner.brakePoint.speed.toFixed(1)} km/h</p>
+                                <p className="text-xs text-muted-foreground">@ {corner.brakePoint.distance.toFixed(0)}m</p>
+                                <p className="text-xs text-red-400">Brake: {corner.brakePoint.brakeForce.toFixed(0)}%</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">Apex Speed</p>
+                                <p className="font-mono text-lg text-primary">{corner.apex.minSpeed.toFixed(1)} km/h</p>
+                                <p className="text-xs text-muted-foreground">@ {corner.apex.distance.toFixed(0)}m</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">Exit Speed</p>
+                                <p className="font-mono text-lg text-secondary">{corner.exit.speed.toFixed(1)} km/h</p>
+                                <p className="text-xs text-muted-foreground">@ {corner.exit.distance.toFixed(0)}m</p>
+                                <p className="text-xs text-green-400">Throttle: {corner.exit.throttle.toFixed(0)}%</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">Time in Corner</p>
+                                <p className="font-mono text-lg text-accent">{corner.timeInCorner ? corner.timeInCorner.toFixed(3) : ((corner.exit.distance - corner.brakePoint.distance) / ((corner.apex.minSpeed + corner.exit.speed) / 2 / 3.6)).toFixed(3)}s</p>
+                                <p className="text-xs text-muted-foreground">Entry to Exit</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground">G-Force</p>
+                                <p className="font-mono text-lg text-orange-400">{corner.gForce ? corner.gForce.toFixed(2) : (((corner.apex.minSpeed / 3.6) ** 2 / (50 + corner.cornerNumber * 5)) / 9.81).toFixed(2)}G</p>
+                                <p className="text-xs text-muted-foreground">Peak lateral</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Tire Degradation Analysis */}
+                {analysisType === 'tire' && analysisData && analysisData.compound && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <Card className="border-l-4 border-l-primary">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            <i className="fas fa-tire text-primary"></i>
+                            Tire Compound
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className={`text-3xl font-bold ${
+                            analysisData.compound === 'SOFT' ? 'text-red-500' :
+                            analysisData.compound === 'MEDIUM' ? 'text-yellow-500' :
+                            analysisData.compound === 'HARD' ? 'text-gray-300' :
+                            'text-primary'
+                          }`}>
+                            {analysisData.compound || 'N/A'}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">Current compound</p>
+                        </CardContent>
+                      </Card>
+                      <Card className="border-l-4 border-l-secondary">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            <i className="fas fa-clock text-secondary"></i>
+                            Tire Age
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold text-secondary">{analysisData.tireAge || 0} laps</div>
+                          <p className="text-xs text-muted-foreground mt-1">Laps on this set</p>
+                          <div className="mt-2 w-full bg-muted rounded-full h-2">
+                            <div 
+                              className="bg-secondary h-2 rounded-full transition-all"
+                              style={{ width: `${Math.min((analysisData.tireAge / 30) * 100, 100)}%` }}
+                            ></div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                      <Card className="border-l-4 border-l-accent">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            <i className="fas fa-chart-line text-accent"></i>
+                            Degradation Rate
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold text-accent">
+                            {(analysisData.degradationRate || 0) > 0 ? '+' : ''}{(analysisData.degradationRate || 0).toFixed(3)}s/lap
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">Time loss per lap</p>
+                          <p className="text-xs text-accent-foreground mt-1">
+                            {Math.abs(analysisData.degradationRate || 0) < 0.05 ? 'Minimal degradation' :
+                             Math.abs(analysisData.degradationRate || 0) < 0.15 ? 'Moderate degradation' :
+                             'High degradation'}
+                          </p>
+                        </CardContent>
+                      </Card>
+                      <Card className={`border-l-4 ${
+                        analysisData.performance === 'optimal' ? 'border-l-green-500' :
+                        analysisData.performance === 'degraded' ? 'border-l-yellow-500' :
+                        'border-l-red-500'
+                      }`}>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            <i className={`fas fa-circle ${
+                              analysisData.performance === 'optimal' ? 'text-green-500' :
+                              analysisData.performance === 'degraded' ? 'text-yellow-500' :
+                              'text-red-500'
+                            }`}></i>
+                            Performance Status
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className={`text-2xl font-bold ${
+                            analysisData.performance === 'optimal' ? 'text-green-500' :
+                            analysisData.performance === 'degraded' ? 'text-yellow-500' :
+                            'text-red-500'
+                          }`}>
+                            {(analysisData.performance || 'UNKNOWN').toUpperCase()}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">Tire condition</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            <i className="fas fa-tachometer-alt"></i>
+                            Average Speed
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold">{(analysisData.avgSpeed || 0).toFixed(1)} km/h</div>
+                          <p className="text-xs text-muted-foreground mt-1">On this lap</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            <i className="fas fa-hourglass-half text-primary"></i>
+                            Est. Life Remaining
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold text-primary">{analysisData.estimatedLifeRemaining || 0} laps</div>
+                          <p className="text-xs text-muted-foreground mt-1">Before critical wear</p>
+                          <div className="mt-2 flex items-center gap-1 text-xs">
+                            {Array.from({ length: 5 }).map((_, i) => (
+                              <div 
+                                key={i} 
+                                className={`h-2 flex-1 rounded ${
+                                  i < Math.ceil((analysisData.estimatedLifeRemaining / 10) * 5) 
+                                    ? 'bg-primary' 
+                                    : 'bg-muted'
+                                }`}
+                              ></div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            <i className="fas fa-temperature-high text-orange-500"></i>
+                            Temperature Impact
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold text-orange-500">{(analysisData.tempImpact || 0).toFixed(1)}%</div>
+                          <p className="text-xs text-muted-foreground mt-1">Temp degradation factor</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            <i className="fas fa-exclamation-triangle text-yellow-500"></i>
+                            Wear Level
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold text-yellow-500">{(analysisData.wearLevel || 0).toFixed(1)}%</div>
+                          <p className="text-xs text-muted-foreground mt-1">Current tire wear</p>
+                          <div className="mt-2 w-full bg-muted rounded-full h-2.5 overflow-hidden">
+                            <div 
+                              className={`h-2.5 rounded-full transition-all ${
+                                (analysisData.wearLevel || 0) < 30 ? 'bg-green-500' :
+                                (analysisData.wearLevel || 0) < 60 ? 'bg-yellow-500' :
+                                'bg-red-500'
+                              }`}
+                              style={{ width: `${Math.min(analysisData.wearLevel || 0, 100)}%` }}
+                            ></div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    {/* Tire Wear Progression Chart */}
+                    <Card className="bg-gradient-to-br from-red-500/5 via-yellow-500/5 to-gray-500/5">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <i className="fas fa-chart-area text-primary"></i>
+                          Tire Wear Progression & Performance
+                        </CardTitle>
+                        <CardDescription>Estimated wear development and performance degradation over tire life</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ResponsiveContainer width="100%" height={300}>
+                          <LineChart data={(() => {
+                            const maxLife = Math.max(40, (analysisData.tireAge || 0) + (analysisData.estimatedLifeRemaining || 10));
+                            const currentAge = analysisData.tireAge || 0;
+                            const degradationRate = Math.abs(analysisData.degradationRate || 0);
+                            const baseWearRate = 2.5;
+
+                            return Array.from({ length: maxLife + 1 }, (_, i) => {
+                              const naturalWear = (i / maxLife) * 100;
+                              const degradationImpact = degradationRate * i * 30;
+                              const totalWear = Math.min(100, naturalWear + degradationImpact);
+                              const performanceLoss = Math.pow(totalWear / 100, 1.5) * 100;
+
+                              return {
+                                lap: i,
+                                wear: totalWear,
+                                performance: Math.max(0, 100 - performanceLoss),
+                                gripLevel: Math.max(0, 100 - (totalWear * 0.8)),
+                                current: i === currentAge
+                              };
+                            });
+                          })()}>
+                            <defs>
+                              <linearGradient id="wearGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#ef4444" stopOpacity={0.8}/>
+                                <stop offset="100%" stopColor="#ef4444" stopOpacity={0.2}/>
+                              </linearGradient>
+                              <linearGradient id="performanceGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#22c55e" stopOpacity={0.8}/>
+                                <stop offset="100%" stopColor="#22c55e" stopOpacity={0.2}/>
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                            <XAxis 
+                              dataKey="lap" 
+                              label={{ value: 'Laps on Tire Set', position: 'insideBottom', offset: -5 }}
+                              stroke="#888"
+                            />
+                            <YAxis 
+                              label={{ value: 'Percentage (%)', angle: -90, position: 'insideLeft' }}
+                              stroke="#888"
+                            />
+                            <Tooltip 
+                              formatter={(value: any) => `${Number(value).toFixed(1)}%`}
+                              contentStyle={{ backgroundColor: 'rgba(18, 18, 20, 0.95)', border: '1px solid #00d9ff' }}
+                            />
+                            <Legend />
+                            <Line 
+                              type="monotone" 
+                              dataKey="wear" 
+                              stroke="#ef4444" 
+                              strokeWidth={3} 
+                              name="Tire Wear" 
+                              dot={false}
+                              fill="url(#wearGradient)"
+                            />
+                            <Line 
+                              type="monotone" 
+                              dataKey="performance" 
+                              stroke="#22c55e" 
+                              strokeWidth={3} 
+                              name="Performance Remaining" 
+                              dot={false}
+                              fill="url(#performanceGradient)"
+                            />
+                            <Line 
+                              type="monotone" 
+                              dataKey="gripLevel" 
+                              stroke="#f59e0b" 
+                              strokeWidth={2} 
+                              strokeDasharray="5 5"
+                              name="Grip Level" 
+                              dot={false}
+                            />
+                            <ReferenceLine 
+                              x={analysisData.tireAge} 
+                              stroke="#00d9ff" 
+                              strokeWidth={2}
+                              strokeDasharray="3 3" 
+                              label={{ value: 'Current Lap', position: 'top', fill: '#00d9ff', fontWeight: 'bold' }}
+                            />
+                            <ReferenceLine 
+                              y={60} 
+                              stroke="#fbbf24" 
+                              strokeDasharray="3 3" 
+                              label={{ value: 'Warning Threshold', position: 'right', fill: '#fbbf24', fontSize: 12 }}
+                            />
+                            <ReferenceLine 
+                              y={30} 
+                              stroke="#ef4444" 
+                              strokeDasharray="3 3" 
+                              label={{ value: 'Critical Threshold', position: 'right', fill: '#ef4444', fontSize: 12 }}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="bg-gradient-to-r from-primary/5 to-secondary/5 border-primary/20">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <i className="fas fa-info-circle text-primary"></i>
+                          Tire Performance Analysis
+                        </CardTitle>
+                        <CardDescription>Detailed tire degradation metrics and insights</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between p-3 bg-background/50 rounded-lg hover:bg-background/70 transition-colors">
+                            <span className="text-sm font-medium flex items-center gap-2">
+                              <i className="fas fa-circle text-primary"></i>
+                              Compound Type:
+                            </span>
+                            <span className={`text-lg font-bold px-3 py-1 rounded ${
+                              analysisData.compound === 'SOFT' ? 'bg-red-500/20 text-red-400' :
+                              analysisData.compound === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400' :
+                              analysisData.compound === 'HARD' ? 'bg-gray-500/20 text-gray-300' :
+                              'bg-primary/20 text-primary'
+                            }`}>
+                              {analysisData.compound}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between p-3 bg-background/50 rounded-lg hover:bg-background/70 transition-colors">
+                            <span className="text-sm font-medium flex items-center gap-2">
+                              <i className="fas fa-layer-group"></i>
+                              Current Lap on Tires:
+                            </span>
+                            <span className="text-lg font-bold">{analysisData.tireAge} / ~{analysisData.tireAge + (analysisData.estimatedLifeRemaining || 0)}</span>
+                          </div>
+                          <div className="flex items-center justify-between p-3 bg-background/50 rounded-lg hover:bg-background/70 transition-colors">
+                            <span className="text-sm font-medium flex items-center gap-2">
+                              <i className="fas fa-chart-line"></i>
+                              Degradation per Lap:
+                            </span>
+                            <span className="text-lg font-bold text-secondary">
+                              {analysisData.degradationRate > 0 ? '+' : ''}{analysisData.degradationRate.toFixed(3)}s
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between p-3 bg-background/50 rounded-lg hover:bg-background/70 transition-colors">
+                            <span className="text-sm font-medium flex items-center gap-2">
+                              <i className="fas fa-battery-three-quarters"></i>
+                              Performance Level:
+                            </span>
+                            <span className={`text-lg font-bold px-3 py-1 rounded ${
+                              analysisData.performance === 'optimal' ? 'bg-green-500/20 text-green-400' :
+                              analysisData.performance === 'degraded' ? 'bg-yellow-500/20 text-yellow-400' :
+                              'bg-red-500/20 text-red-400'
+                            }`}>
+                              {analysisData.performance.charAt(0).toUpperCase() + analysisData.performance.slice(1)}
+                            </span>
+                          </div>
+
+                          <div className="mt-4 p-4 bg-gradient-to-r from-orange-500/10 to-red-500/10 rounded-lg border border-orange-500/20">
+                            <h4 className="font-semibold mb-3 flex items-center gap-2">
+                              <i className="fas fa-lightbulb text-yellow-400"></i>
+                              Tire Strategy Insights
+                            </h4>
+                            <div className="space-y-2 text-sm">
+                              <div className="flex items-start gap-2">
+                                <i className="fas fa-check-circle text-green-400 mt-0.5"></i>
+                                <div>
+                                  <span className="font-medium">Estimated Life:</span> 
+                                  <span className="ml-2">{analysisData.estimatedLifeRemaining || 0} more laps before critical wear</span>
+                                </div>
+                              </div>
+                              <div className="flex items-start gap-2">
+                                <i className={`fas fa-${
+                                  (analysisData.wearLevel || 0) < 30 ? 'check-circle text-green-400' :
+                                  (analysisData.wearLevel || 0) < 60 ? 'exclamation-circle text-yellow-400' :
+                                  'times-circle text-red-400'
+                                } mt-0.5`}></i>
+                                <div>
+                                  <span className="font-medium">Current Wear:</span> 
+                                  <span className="ml-2">{(analysisData.wearLevel || 0).toFixed(1)}% - {
+                                    (analysisData.wearLevel || 0) < 30 ? 'Tires in good condition' :
+                                    (analysisData.wearLevel || 0) < 60 ? 'Moderate wear detected' :
+                                    'High wear - consider pit stop'
+                                  }</span>
+                                </div>
+                              </div>
+                              <div className="flex items-start gap-2">
+                                <i className="fas fa-temperature-high text-orange-400 mt-0.5"></i>
+                                <div>
+                                  <span className="font-medium">Temperature Effect:</span> 
+                                  <span className="ml-2">{(analysisData.tempImpact || 0).toFixed(1)}% degradation from heat</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+
+                {/* Energy Management Analysis */}
+                {analysisType === 'energy' && analysisData && analysisData.fullThrottlePct !== undefined && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Full Throttle</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold text-primary">{(analysisData.fullThrottlePct || 0).toFixed(1)}%</div>
+                          <p className="text-xs text-muted-foreground mt-1">Of lap duration</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Lift & Coast</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold text-secondary">{(analysisData.liftAndCoastPct || 0).toFixed(1)}%</div>
+                          <p className="text-xs text-muted-foreground mt-1">Energy saving</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">ERS Deployment</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className={`text-2xl font-bold ${
+                            analysisData.ersDeployment === 'high' ? 'text-green-500' :
+                            analysisData.ersDeployment === 'medium' ? 'text-yellow-500' :
+                            'text-red-500'
+                          }`}>
+                            {(analysisData.ersDeployment || 'UNKNOWN').toUpperCase()}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">Usage level</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Efficiency Score</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold text-accent">{(analysisData.efficiencyScore || 0).toFixed(1)}</div>
+                          <p className="text-xs text-muted-foreground mt-1">Out of 100</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Estimated Brake Energy</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold text-orange-500">{(analysisData.estimatedBrakeEnergy || 0).toFixed(2)} MJ</div>
+                          <p className="text-xs text-muted-foreground mt-1">Total brake energy</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Energy Recovery</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold text-green-500">{(analysisData.estimatedEnergyRecovery || 0).toFixed(2)} MJ</div>
+                          <p className="text-xs text-muted-foreground mt-1">ERS recovery</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Power Unit Stress</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold text-purple-500">{(analysisData.puStress || 0).toFixed(1)}%</div>
+                          <p className="text-xs text-muted-foreground mt-1">Component stress level</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Fuel Efficiency</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold text-blue-500">{(analysisData.fuelEfficiency || 0).toFixed(2)} kg/lap</div>
+                          <p className="text-xs text-muted-foreground mt-1">Estimated consumption</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    <Card className="bg-gradient-to-r from-green-500/5 to-blue-500/5 border-green-500/20">
+                      <CardHeader>
+                        <CardTitle>Energy Management Strategy</CardTitle>
+                        <CardDescription>Detailed power unit performance analysis</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between p-3 bg-background/50 rounded-lg">
+                            <span className="text-sm font-medium">Full Throttle Usage:</span>
+                            <span className="text-lg font-bold text-primary">{analysisData.fullThrottlePct.toFixed(1)}%</span>
+                          </div>
+                          <div className="flex items-center justify-between p-3 bg-background/50 rounded-lg">
+                            <span className="text-sm font-medium">Lift & Coast Percentage:</span>
+                            <span className="text-lg font-bold text-secondary">{analysisData.liftAndCoastPct.toFixed(1)}%</span>
+                          </div>
+                          <div className="flex items-center justify-between p-3 bg-background/50 rounded-lg">
+                            <span className="text-sm font-medium">ERS Deployment Mode:</span>
+                            <span className={`text-lg font-bold ${
+                              analysisData.ersDeployment === 'high' ? 'text-green-500' :
+                              analysisData.ersDeployment === 'medium' ? 'text-yellow-500' :
+                              'text-red-500'
+                            }`}>
+                              {analysisData.ersDeployment.charAt(0).toUpperCase() + analysisData.ersDeployment.slice(1)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between p-3 bg-background/50 rounded-lg">
+                            <span className="text-sm font-medium">Overall Efficiency:</span>
+                            <span className="text-lg font-bold text-accent">{analysisData.efficiencyScore.toFixed(1)}/100</span>
+                          </div>
+                          <div className="mt-4 p-4 bg-gradient-to-r from-orange-500/10 to-green-500/10 rounded-lg border border-green-500/20">
+                            <div className="grid grid-cols-2 gap-4 text-center">
+                              <div>
+                                <p className="text-xs text-muted-foreground mb-1">Brake Energy</p>
+                                <p className="text-xl font-bold text-orange-500">{analysisData.estimatedBrakeEnergy.toFixed(2)} MJ</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground mb-1">Recovery</p>
+                                <p className="text-xl font-bold text-green-500">{analysisData.estimatedEnergyRecovery.toFixed(2)} MJ</p>
+                              </div>
+                            </div>
+                            <div className="mt-3 pt-3 border-t border-border/30">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-muted-foreground">Recovery Efficiency:</span>
+                                <span className="font-semibold text-green-400">
+                                  {((analysisData.estimatedEnergyRecovery / analysisData.estimatedBrakeEnergy) * 100).toFixed(1)}%
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Energy Usage Visualization */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Throttle Distribution</CardTitle>
+                        <CardDescription>Breakdown of throttle application during lap</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ResponsiveContainer width="100%" height={200}>
+                          <BarChart data={(() => {
+                            const fullThrottle = analysisData.fullThrottlePct || 0;
+                            const liftCoast = analysisData.liftAndCoastPct || 0;
+                            const partialThrottle = Math.max(0, 100 - fullThrottle - liftCoast);
+                            return [
+                              { name: 'Full Throttle (>95%)', value: fullThrottle, fill: '#22c55e' },
+                              { name: 'Partial Throttle', value: partialThrottle, fill: '#3b82f6' },
+                              { name: 'Lift & Coast (<20%)', value: liftCoast, fill: '#f59e0b' },
+                            ];
+                          })()} layout="vertical">
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                            <YAxis type="category" dataKey="name" width={130} />
+                            <Tooltip formatter={(value) => [`${Number(value).toFixed(1)}%`, 'Time %']} />
+                            <Bar dataKey="value" radius={[0, 4, 4, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+
+                {/* Brake Analysis - Enhanced */}
+                {analysisType === 'brake' && analysisData && analysisData.brakeZones && Array.isArray(analysisData.brakeZones) && analysisData.brakeZones.length > 0 && (
+                  <div className="space-y-6">
+                    {/* Main Metrics Grid */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Total Brake Time</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold">{(analysisData.totalBrakeTimePercent || 0).toFixed(1)}%</div>
+                          <p className="text-xs text-muted-foreground mt-1">Of lap duration</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Avg Brake Force</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold">{(analysisData.avgBrakeForce || 0).toFixed(1)}%</div>
+                          <p className="text-xs text-muted-foreground mt-1">When braking</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Brake Zones</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold text-primary">{analysisData.brakeZones.length}</div>
+                          <p className="text-xs text-muted-foreground mt-1">Detected zones</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Max Speed Loss</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold text-secondary">
+                            {Math.max(...analysisData.brakeZones.map((z: any) => z.speedLoss || 0)).toFixed(1)} km/h
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">Hardest braking zone</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    {/* Additional Brake Metrics */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Peak Brake Pressure</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold text-red-500">
+                            {Math.max(...analysisData.brakeZones.map((z: any) => z.peakBrakeForce || 0)).toFixed(0)}%
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">Maximum recorded</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Brake Efficiency</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold text-primary">
+                            {analysisData.avgBrakeForce > 0 
+                              ? ((analysisData.brakeZones.reduce((sum: number, z: any) => sum + (z.speedLoss || 0), 0) / analysisData.brakeZones.length / analysisData.avgBrakeForce) * 100).toFixed(1)
+                              : '0.0'}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">Speed loss per brake %</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Avg Brake Duration</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold text-accent">
+                            {(analysisData.brakeZones.reduce((sum: number, z: any) => sum + (z.duration || 0), 0) / analysisData.brakeZones.length).toFixed(2)}s
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">Per brake zone</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Total Brake Distance</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold text-orange-500">
+                            {analysisData.brakeZones.reduce((sum: number, z: any) => sum + ((z.endDistance || 0) - (z.startDistance || 0)), 0).toFixed(0)}m
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">Combined brake zones</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    {/* Detailed Brake Zones List */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Detailed Brake Zone Analysis</CardTitle>
+                        <CardDescription>In-depth metrics for each detected braking zone</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          {analysisData.brakeZones.map((zone: any, idx: number) => (
+                            <div key={idx} className="p-4 bg-gradient-to-r from-red-500/10 to-orange-500/10 rounded-lg border border-red-500/20">
+                              <div className="flex items-center justify-between mb-3">
+                                <h4 className="font-semibold text-lg flex items-center gap-2">
+                                  <span className="w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center text-sm">
+                                    {idx + 1}
+                                  </span>
+                                  Brake Zone {idx + 1}
+                                </h4>
+                                <div className="flex items-center gap-4">
+                                  <div className="text-right">
+                                    <p className="text-xs text-muted-foreground">Speed Loss</p>
+                                    <p className="text-lg font-bold text-red-400">{zone.speedLoss.toFixed(1)} km/h</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-xs text-muted-foreground">Peak Brake</p>
+                                    <p className="text-lg font-bold text-orange-400">{zone.peakBrakeForce.toFixed(0)}%</p>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-4 gap-4 text-sm">
+                                <div>
+                                  <p className="text-muted-foreground">Start Distance</p>
+                                  <p className="font-mono text-base font-semibold">{zone.startDistance.toFixed(0)} m</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">End Distance</p>
+                                  <p className="font-mono text-base font-semibold">{zone.endDistance.toFixed(0)} m</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Avg Brake Force</p>
+                                  <p className="font-mono text-base font-semibold">{zone.avgBrakeForce.toFixed(1)}%</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Duration</p>
+                                  <p className="font-mono text-base font-semibold">{zone.duration.toFixed(2)} s</p>
+                                </div>
+                              </div>
+                              <div className="mt-3 pt-3 border-t border-border/30">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-muted-foreground">Brake Efficiency Index:</span>
+                                  <span className="font-semibold text-primary">
+                                    {((zone.speedLoss / zone.peakBrakeForce) * 10).toFixed(2)}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+
+                {/* Weather Impact Analysis */}
+                {analysisType === 'weather' && analysisData && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            <i className="fas fa-thermometer-half text-red-400"></i>
+                            Air Temperature
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold">{analysisData.airTemp?.toFixed(1) || 'N/A'}°C</div>
+                          <p className="text-xs text-muted-foreground mt-1">Average air temp</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            <i className="fas fa-road text-orange-400"></i>
+                            Track Temperature
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold text-orange-400">{analysisData.trackTemp?.toFixed(1) || 'N/A'}°C</div>
+                          <p className="text-xs text-muted-foreground mt-1">Average track temp</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            <i className="fas fa-tint text-blue-400"></i>
+                            Humidity
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold text-blue-400">{analysisData.humidity?.toFixed(1) || 'N/A'}%</div>
+                          <p className="text-xs text-muted-foreground mt-1">Air humidity</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            <i className="fas fa-wind text-cyan-400"></i>
+                            Wind Speed
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold text-cyan-400">{analysisData.windSpeed?.toFixed(1) || 'N/A'} m/s</div>
+                          <p className="text-xs text-muted-foreground mt-1">Avg wind speed</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Grip Level</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className={`text-2xl font-bold ${analysisData.gripLevel === 'high' ? 'text-green-400' : analysisData.gripLevel === 'medium' ? 'text-yellow-400' : 'text-red-400'}`}>
+                            {analysisData.gripLevel?.toUpperCase() || 'N/A'}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">Track grip estimation</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Conditions</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className={`text-2xl font-bold ${analysisData.conditions === 'wet' ? 'text-blue-400' : 'text-green-400'}`}>
+                            {analysisData.conditions?.toUpperCase() || 'DRY'}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">Track conditions</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Tire Wear Factor</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold text-primary">{analysisData.tireWearFactor?.toFixed(2) || '1.00'}x</div>
+                          <p className="text-xs text-muted-foreground mt-1">Wear multiplier</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Track Evolution</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className={`text-2xl font-bold ${(analysisData.trackEvolution || 0) > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {analysisData.trackEvolution > 0 ? '+' : ''}{analysisData.trackEvolution?.toFixed(1) || '0'}°C
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">Temp change over session</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </div>
+                )}
+
+                {/* Pit Stop Strategy Analysis */}
+                {analysisType === 'pitstop' && analysisData?.drivers && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 gap-4">
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Average Pit Stops</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold text-primary">{analysisData.averageStops?.toFixed(1) || 0}</div>
+                          <p className="text-xs text-muted-foreground mt-1">Stops per driver</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Total Drivers</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold text-secondary">{analysisData.drivers?.length || 0}</div>
+                          <p className="text-xs text-muted-foreground mt-1">In session</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Driver Pit Stop Strategies</CardTitle>
+                        <CardDescription>Tire compounds and stint information for all drivers</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3 max-h-96 overflow-y-auto">
+                          {analysisData.drivers?.slice(0, 10).map((driver: any) => (
+                            <div key={driver.driver} className="p-3 bg-muted/30 rounded-lg border border-border">
+                              <div className="flex items-center justify-between mb-2">
+                                <h4 className="font-semibold">{driver.driver}</h4>
+                                <span className="text-sm text-muted-foreground">{driver.pitStops} stops</span>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {driver.stints?.map((stint: any, idx: number) => (
+                                  <div key={idx} className={`px-2 py-1 rounded text-xs font-medium ${
+                                    stint.compound === 'SOFT' ? 'bg-red-500/20 text-red-400' :
+                                    stint.compound === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400' :
+                                    stint.compound === 'HARD' ? 'bg-gray-500/20 text-gray-300' :
+                                    'bg-blue-500/20 text-blue-400'
+                                  }`}>
+                                    {stint.compound} L{stint.startLap}-{stint.endLap}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+
+                {/* DRS Zone Analysis */}
+                {analysisType === 'drs' && analysisData && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">DRS Usage</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold text-primary">{analysisData.totalDrsUsage?.toFixed(1) || 0}%</div>
+                          <p className="text-xs text-muted-foreground mt-1">Of lap distance</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">DRS Zones</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold text-secondary">{analysisData.totalZones || 0}</div>
+                          <p className="text-xs text-muted-foreground mt-1">Activations</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Avg Speed in DRS</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold text-accent">{analysisData.avgSpeedInDrs?.toFixed(1) || 0} km/h</div>
+                          <p className="text-xs text-muted-foreground mt-1">While DRS active</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Max Speed in DRS</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold text-green-400">{analysisData.maxSpeedInDrs?.toFixed(1) || 0} km/h</div>
+                          <p className="text-xs text-muted-foreground mt-1">Peak DRS speed</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+                    {analysisData.drsZones?.length > 0 && (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>DRS Zone Details</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            {analysisData.drsZones.map((zone: any) => (
+                              <div key={zone.zoneNumber} className="p-4 bg-gradient-to-r from-green-500/10 to-cyan-500/10 rounded-lg border border-green-500/20">
+                                <div className="flex items-center justify-between mb-3">
+                                  <h4 className="font-semibold flex items-center gap-2">
+                                    <span className="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center text-sm">
+                                      {zone.zoneNumber}
+                                    </span>
+                                    DRS Zone {zone.zoneNumber}
+                                  </h4>
+                                  <span className="text-lg font-bold text-green-400">+{zone.speedGain?.toFixed(1) || 0} km/h</span>
+                                </div>
+                                <div className="grid grid-cols-4 gap-4 text-sm">
+                                  <div>
+                                    <p className="text-muted-foreground">Entry Speed</p>
+                                    <p className="font-mono text-base font-semibold">{zone.entrySpeed?.toFixed(1) || 0} km/h</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-muted-foreground">Exit Speed</p>
+                                    <p className="font-mono text-base font-semibold">{zone.exitSpeed?.toFixed(1) || 0} km/h</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-muted-foreground">Zone Length</p>
+                                    <p className="font-mono text-base font-semibold">{zone.length?.toFixed(0) || 0} m</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-muted-foreground">Avg Throttle</p>
+                                    <p className="font-mono text-base font-semibold">{zone.avgThrottle?.toFixed(1) || 0}%</p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+                )}
+
+                {/* Race Strategy Analysis */}
+                {analysisType === 'strategy' && analysisData?.drivers && (
+                  <div className="space-y-6">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Driver Performance Ranking</CardTitle>
+                        <CardDescription>Ranked by average lap time and consistency</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2 max-h-96 overflow-y-auto">
+                          {analysisData.drivers?.map((driver: any, idx: number) => (
+                            <div key={driver.driver} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border">
+                              <div className="flex items-center gap-3">
+                                <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                                  idx === 0 ? 'bg-yellow-500 text-black' :
+                                  idx === 1 ? 'bg-gray-400 text-black' :
+                                  idx === 2 ? 'bg-orange-600 text-white' :
+                                  'bg-muted text-muted-foreground'
+                                }`}>
+                                  {idx + 1}
+                                </span>
+                                <div>
+                                  <p className="font-semibold">{driver.driver}</p>
+                                  <p className="text-xs text-muted-foreground">{driver.totalLaps} laps</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-6 text-sm">
+                                <div className="text-right">
+                                  <p className="text-muted-foreground">Best Lap</p>
+                                  <p className="font-mono font-semibold text-primary">{driver.bestLap?.toFixed(3) || 'N/A'}s</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-muted-foreground">Avg Lap</p>
+                                  <p className="font-mono font-semibold">{driver.avgLap?.toFixed(3) || 'N/A'}s</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-muted-foreground">Consistency</p>
+                                  <p className={`font-mono font-semibold ${driver.consistency < 0.5 ? 'text-green-400' : driver.consistency < 1 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                    {driver.consistency?.toFixed(3) || 'N/A'}s
+                                  </p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-muted-foreground">Trend</p>
+                                  <p className={`font-semibold ${driver.paceTrend === 'improving' ? 'text-green-400' : 'text-red-400'}`}>
+                                    {driver.paceTrend === 'improving' ? 'Improving' : 'Declining'}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          // Race Weather Section
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <p className="text-muted-foreground">View weather conditions throughout the entire session including temperature, humidity, wind, and track conditions.</p>
+              <Button 
+                onClick={handleLoadWeather} 
+                disabled={loadWeatherMutation.isPending || !sessionData}
+              >
+                {loadWeatherMutation.isPending ? (
+                  <i className="fas fa-spinner fa-spin mr-2"></i>
+                ) : (
+                  <i className="fas fa-cloud-sun mr-2"></i>
+                )}
+                Load Weather Data
+              </Button>
+            </div>
+
+            {!weatherData ? (
+              <div className="text-center py-12">
+                <i className="fas fa-cloud-sun text-6xl text-muted mb-4 block"></i>
+                <p className="text-muted-foreground mb-2">Click "Load Weather Data" to view session weather conditions</p>
+                <p className="text-xs text-muted-foreground">Includes temperature, humidity, wind speed, and track conditions</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Current Conditions Summary */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <i className="fas fa-thermometer-half text-primary"></i>
+                        Air Temperature
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold text-primary">
+                        {weatherData.airTemp != null ? `${weatherData.airTemp.toFixed(1)}°C` : 'N/A'}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">Session average</p>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <i className="fas fa-road text-orange-400"></i>
+                        Track Temperature
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold text-secondary">
+                        {weatherData.trackTemp != null ? `${weatherData.trackTemp.toFixed(1)}°C` : 'N/A'}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">Session average</p>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <i className="fas fa-tint text-blue-400"></i>
+                        Humidity
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold text-accent">
+                        {weatherData.humidity != null ? `${weatherData.humidity.toFixed(0)}%` : 'N/A'}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">Session average</p>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <i className="fas fa-wind text-cyan-400"></i>
+                        Wind Speed
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">
+                        {weatherData.windSpeed != null ? `${weatherData.windSpeed.toFixed(1)} m/s` : 'N/A'}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">Session average</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Track Status */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <i className="fas fa-flag-checkered"></i>
+                      Track Conditions
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="p-4 bg-muted/30 rounded-lg border border-border text-center">
+                        <i className={`fas fa-${weatherData.rainfall || weatherData.currentConditions?.rainfall ? 'cloud-rain text-blue-400' : 'sun text-yellow-400'} text-3xl mb-2`}></i>
+                        <p className="font-semibold">{weatherData.conditions || 'Dry'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {weatherData.rainfall ? 'Wet Surface' : 'Dry Surface'}
+                        </p>
+                      </div>
+                      <div className="p-4 bg-muted/30 rounded-lg border border-border text-center">
+                        <i className="fas fa-compass text-purple-400 text-3xl mb-2"></i>
+                        <p className="font-semibold">{weatherData.windDirection != null ? `${weatherData.windDirection.toFixed(0)}°` : 'N/A'}</p>
+                        <p className="text-xs text-muted-foreground">Session average</p>
+                      </div>
+                      <div className="p-4 bg-muted/30 rounded-lg border border-border text-center">
+                        <i className="fas fa-gauge-high text-green-400 text-3xl mb-2"></i>
+                        <p className="font-semibold">{weatherData.pressure != null ? `${weatherData.pressure.toFixed(0)} mbar` : 'N/A'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {weatherData.pressure >= 1010 && weatherData.pressure <= 1020 ? 'Normal' : weatherData.pressure > 1020 ? 'High' : 'Low'}
+                        </p>
+                      </div>
+                      <div className="p-4 bg-muted/30 rounded-lg border border-border text-center">
+                        <i className={`fas fa-${weatherData.trackStatus === 'Green' ? 'check-circle text-green-400' : weatherData.trackStatus === 'Yellow' ? 'exclamation-triangle text-yellow-400' : 'flag text-red-400'} text-3xl mb-2`}></i>
+                        <p className="font-semibold">{weatherData.trackStatus || 'Normal'}</p>
+                        <p className="text-xs text-muted-foreground">Track Status</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Weather Timeline */}
+                {weatherData.weatherTimeline && weatherData.weatherTimeline.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <i className="fas fa-chart-line"></i>
+                        Weather Throughout Session
+                      </CardTitle>
+                      <CardDescription>How conditions changed during the session</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={300}>
+                        <LineChart data={weatherData.weatherTimeline}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="time" />
+                          <YAxis yAxisId="temp" orientation="left" domain={['auto', 'auto']} />
+                          <YAxis yAxisId="humidity" orientation="right" domain={[0, 100]} />
+                          <Tooltip />
+                          <Legend />
+                          <Line yAxisId="temp" type="monotone" dataKey="airTemp" stroke="#00d9ff" name="Air Temp (C)" dot={false} />
+                          <Line yAxisId="temp" type="monotone" dataKey="trackTemp" stroke="#ff3853" name="Track Temp (C)" dot={false} />
+                          <Line yAxisId="humidity" type="monotone" dataKey="humidity" stroke="#22c55e" name="Humidity (%)" dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Weather Impact on Lap Times */}
+                {weatherData.weatherImpact && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <i className="fas fa-bolt text-yellow-400"></i>
+                        Weather Impact Analysis
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        {weatherData.weatherImpact.map((impact: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border">
+                            <div className="flex items-center gap-3">
+                              <i className={`fas fa-${impact.type === 'temperature' ? 'thermometer-half text-red-400' : impact.type === 'humidity' ? 'tint text-blue-400' : 'wind text-cyan-400'}`}></i>
+                              <span className="font-semibold">{impact.factor}</span>
+                            </div>
+                            <div className="text-right">
+                              <span className={`font-mono ${impact.effect > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                                {impact.effect > 0 ? '+' : ''}{impact.effect.toFixed(3)}s
+                              </span>
+                              <p className="text-xs text-muted-foreground">per lap impact</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
