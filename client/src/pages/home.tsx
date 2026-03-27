@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { Trophy, Activity, Info, Users, Shield, Zap, Globe } from "lucide-react";
-import f1CarAsset from "@assets/image_1771088682703.png";
+import f1CarAsset from "@assets/image_1774429619135.png";
 
 export default function Home() {
   return (
@@ -140,10 +140,11 @@ export default function Home() {
               <div className="absolute -top-10 -right-10 w-64 h-64 bg-primary/10 rounded-full blur-3xl animate-pulse"></div>
               <div className="absolute -bottom-10 -left-10 w-64 h-64 bg-secondary/10 rounded-full blur-3xl animate-pulse"></div>
               <div className="relative aspect-square rounded-3xl bg-gradient-to-br from-muted to-card border border-border/50 overflow-hidden group shadow-2xl">
-                <div 
-                  className="absolute inset-0 bg-cover bg-center opacity-40 grayscale group-hover:grayscale-0 transition-all duration-700 scale-110 group-hover:scale-100"
-                  style={{ backgroundImage: `url(${f1CarAsset})` }}
-                ></div>
+                <img
+                  src={f1CarAsset}
+                  alt="F1 Car Data Driven Performance"
+                  className="absolute inset-0 w-full h-full object-cover opacity-50 grayscale group-hover:grayscale-0 group-hover:opacity-70 transition-all duration-700 scale-110 group-hover:scale-100"
+                />
                 <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent"></div>
                 <div className="p-12 h-full flex flex-col justify-end relative z-10">
                    <div className="p-4 rounded-xl bg-background/80 backdrop-blur-md border border-white/10 mb-6">

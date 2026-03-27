@@ -8,6 +8,7 @@ import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
 import News from "@/pages/news";
 import Schedule from "@/pages/schedule";
+import Creator from "@/pages/creator";
 import PrivacyPolicy from "@/pages/privacy";
 import TermsOfService from "@/pages/tos";
 import NotFound from "@/pages/not-found";
@@ -24,6 +25,8 @@ function Router() {
           <Route path="/telemetry" component={Dashboard} />
           <Route path="/news" component={News} />
           <Route path="/schedule" component={Schedule} />
+          <Route path="/creator" component={Creator} />
+          <Route path="/karting" component={Creator} />
           <Route path="/privacy" component={PrivacyPolicy} />
           <Route path="/terms" component={TermsOfService} />
           <Route component={NotFound} />

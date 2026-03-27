@@ -14,6 +14,7 @@ export default function Header() {
     { name: "NEWS", path: "/news" },
     { name: "SCHEDULE", path: "/schedule" },
     { name: "TELEMETRY", path: "/telemetry" },
+    { name: "CREATOR", path: "/creator" },
     { name: "FANTASY", path: "/fantasy", disabled: true },
     { name: "BLOG", path: "/blog", disabled: true },
     { name: "STREAM", path: "/stream", disabled: true },
@@ -28,12 +29,13 @@ export default function Header() {
               <span className="text-white font-black text-xl italic">C</span>
             </div>
           </Link>
-          
+
           <nav className="hidden md:flex items-center space-x-6 text-sm font-medium">
             {navItems.map((item) => (
               <Link
                 key={item.name}
                 href={item.disabled ? "#" : item.path}
+                data-testid={`nav-${item.name.toLowerCase()}`}
                 className={`transition-colors hover:text-primary ${
                   location === item.path ? "text-primary" : "text-muted-foreground"
                 } ${item.disabled ? "cursor-not-allowed opacity-50" : ""}`}
@@ -57,7 +59,6 @@ export default function Header() {
         </div>
       </div>
 
-      {/* Mobile Menu */}
       {isMenuOpen && (
         <div className="md:hidden border-t border-border p-4 bg-background">
           <nav className="flex flex-col space-y-4">
