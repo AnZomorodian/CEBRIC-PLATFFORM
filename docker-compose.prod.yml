@@ -1,0 +1,30 @@
+# Production deploy: pulls the prebuilt image from GitHub Container Registry.
+# Usage:
+#   export IMAGE=ghcr.io/anzomorodian/cebric-platfform:latest
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+
+services:
+  app:
+    image: ${IMAGE:-ghcr.io/anzomorodian/cebric-platfform:latest}
+    container_name: f1-data-app
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: ${APP_PORT:-5000}
+      FASTF1_CACHE_DIR: /app/fastf1_cache
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+    ports:
+      - "${APP_PORT:-5000}:5000"
+    volumes:
+      - fastf1_cache:/app/fastf1_cache
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  fastf1_cache:
+    driver: local

@@ -255,6 +255,45 @@ docker-compose logs app
 docker-compose exec app wget -O- http://localhost:5000/api/health
 ```
 
+## Build on GitHub & Deploy from GHCR
+
+The repo includes a GitHub Actions workflow (`.github/workflows/docker-publish.yml`)
+that builds the Docker image and pushes it to GitHub Container Registry (GHCR).
+
+### How the build works
+
+- Trigger: **manual only**. GitHub → repo → **Actions** →
+  "Build and Push Docker Image (manual)" → **Run workflow**.
+- Input: `tag` — the image tag to publish (default `latest`, e.g. `v1.0.0`).
+- Image: `ghcr.io/anzomorodian/cebric-platfform`
+- Tags pushed: the `tag` you entered + the commit SHA.
+- Auth: uses the built-in `GITHUB_TOKEN` — no secrets to configure.
+
+After the first successful run, make the package public if pulling without auth:
+GitHub → repo → Packages → cebric-platfform → Package settings → Change visibility.
+
+### Deploy on a server
+
+```bash
+# 1. Log in (only needed if the package is private)
+echo $GHCR_PAT | docker login ghcr.io -u <github-username> --password-stdin
+
+# 2. Pull and run the published image
+export IMAGE=ghcr.io/anzomorodian/cebric-platfform:latest
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+`docker-compose.prod.yml` pulls the prebuilt image instead of building locally.
+Override the tag with `IMAGE=...:v1.2.3` to pin a release.
+
+### Tagging a release
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0   # CI builds and pushes ghcr.io/.../cebric-platfform:1.0.0
+```
+
 ## Production Deployment
 
 ### Security Checklist
