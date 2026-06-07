@@ -6,7 +6,7 @@
 
 services:
   app:
-    image: ${IMAGE:-ghcr.io/anzomorodian/cebric-platfform:latest}
+    image: ${IMAGE:-ghcr.io/anzomorodian/cebric-platform:latest}
     container_name: f1-data-app
     restart: unless-stopped
     environment:
