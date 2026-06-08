@@ -93,8 +93,28 @@ export default function TelemetrySection({
   };
 
   const availableDrivers = sessionData?.drivers || [];
-  const maxLap = sessionData?.statistics.totalLaps || 50;
-  const lapOptions = Array.from({ length: maxLap }, (_, i) => i + 1);
+
+  // Lap dropdown must reflect the laps THIS driver actually completed.
+  // statistics.totalLaps is the max across ALL drivers, so a global 1..N range
+  // offers laps a given driver never ran (e.g. ALB has no lap 27 in a quali),
+  // and the backend throws "No lap data found for ALB lap 27".
+  const getLapOptions = (driver: string) => {
+    if (driver && sessionData?.laps?.length) {
+      const laps = Array.from(
+        new Set(
+          sessionData.laps
+            .filter((lap) => lap.driver === driver)
+            .map((lap) => lap.lapNumber)
+        )
+      ).sort((a, b) => a - b);
+      if (laps.length > 0) return laps;
+    }
+    const maxLap = sessionData?.statistics.totalLaps || 50;
+    return Array.from({ length: maxLap }, (_, i) => i + 1);
+  };
+
+  const lap1Options = getLapOptions(selectedDriver1);
+  const lap2Options = getLapOptions(selectedDriver2);
 
   const formatTime = (seconds: number) => {
     if (seconds === 0) return "N/A";
@@ -261,7 +281,7 @@ export default function TelemetrySection({
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6" data-testid="telemetry-controls">
           <div>
             <label className="block text-sm font-medium text-muted-foreground mb-2">Driver 1</label>
-            <Select value={selectedDriver1} onValueChange={setSelectedDriver1}>
+            <Select value={selectedDriver1} onValueChange={(v) => { setSelectedDriver1(v); setSelectedLap1(""); }}>
               <SelectTrigger>
                 <SelectValue placeholder="Select driver..." />
               </SelectTrigger>
@@ -283,7 +303,7 @@ export default function TelemetrySection({
                   <SelectValue placeholder="Select lap..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {lapOptions.map((lap) => (
+                  {lap1Options.map((lap) => (
                     <SelectItem key={lap} value={lap.toString()}>
                       {lap}
                     </SelectItem>
@@ -321,7 +341,7 @@ export default function TelemetrySection({
 
           <div>
             <label className="block text-sm font-medium text-muted-foreground mb-2">Driver 2 (Optional)</label>
-            <Select value={selectedDriver2} onValueChange={setSelectedDriver2}>
+            <Select value={selectedDriver2} onValueChange={(v) => { setSelectedDriver2(v); setSelectedLap2(""); }}>
               <SelectTrigger>
                 <SelectValue placeholder="Select driver..." />
               </SelectTrigger>
@@ -344,7 +364,7 @@ export default function TelemetrySection({
                   <SelectValue placeholder="Select lap..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {lapOptions.map((lap) => (
+                  {lap2Options.map((lap) => (
                     <SelectItem key={lap} value={lap.toString()}>
                       {lap}
                     </SelectItem>
