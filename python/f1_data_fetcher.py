@@ -41,7 +41,10 @@ def get_session_data(year, gp, session_type, selected_drivers=None):
     try:
         # Load session
         session = fastf1.get_session(int(year), gp, session_type)
-        session.load()
+        # Skip telemetry/weather/messages: lap table needs timing data only.
+        # Loading car_data (telemetry) is slow and can crash on numpy datetime
+        # casting; per-lap telemetry is fetched separately by other commands.
+        session.load(telemetry=False, weather=False, messages=False)
 
         # Get laps data
         laps = session.laps

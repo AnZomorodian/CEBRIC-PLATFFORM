@@ -7,10 +7,10 @@ import { execSync } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
 import Parser from "rss-parser";
+import { pythonExecutable } from "./services/python";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const pythonExecutable = "python3";
 const parser = new Parser();
 
 // Global error handler to prevent server crashes
@@ -29,6 +29,11 @@ function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => P
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Health check — used by the Docker/compose healthcheck.
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok", uptime: process.uptime() });
+  });
+
   // Get F1 News from RSS
   app.get("/api/f1/news", asyncHandler(async (req, res) => {
     try {
@@ -163,7 +168,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const pythonPath = path.resolve(__dirname, '../python/f1_data_fetcher.py');
 
     const result = execSync(
-      `${pythonExecutable} ${pythonPath} downforce-analysis ${year} "${gp}" ${session} ${driver} ${lap}`,
+      `"${pythonExecutable}" "${pythonPath}" downforce-analysis ${year} "${gp}" ${session} ${driver} ${lap}`,
       { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 }
     );
 
@@ -176,7 +181,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const pythonPath = path.resolve(__dirname, '../python/f1_data_fetcher.py');
 
     const result = execSync(
-      `${pythonExecutable} ${pythonPath} corner-analysis ${year} "${gp}" ${session} ${driver} ${lap}`,
+      `"${pythonExecutable}" "${pythonPath}" corner-analysis ${year} "${gp}" ${session} ${driver} ${lap}`,
       { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 }
     );
 
@@ -189,7 +194,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const pythonPath = path.resolve(__dirname, '../python/f1_data_fetcher.py');
 
     const result = execSync(
-      `${pythonExecutable} ${pythonPath} brake-analysis ${year} "${gp}" ${session} ${driver} ${lap}`,
+      `"${pythonExecutable}" "${pythonPath}" brake-analysis ${year} "${gp}" ${session} ${driver} ${lap}`,
       { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 }
     );
 
@@ -202,7 +207,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const pythonPath = path.resolve(__dirname, '../python/f1_data_fetcher.py');
 
     const result = execSync(
-      `${pythonExecutable} ${pythonPath} tire-analysis ${year} "${gp}" ${session} ${driver} ${lap}`,
+      `"${pythonExecutable}" "${pythonPath}" tire-analysis ${year} "${gp}" ${session} ${driver} ${lap}`,
       { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 }
     );
 
@@ -215,7 +220,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const pythonPath = path.resolve(__dirname, '../python/f1_data_fetcher.py');
 
     const result = execSync(
-      `${pythonExecutable} ${pythonPath} energy-analysis ${year} "${gp}" ${session} ${driver} ${lap}`,
+      `"${pythonExecutable}" "${pythonPath}" energy-analysis ${year} "${gp}" ${session} ${driver} ${lap}`,
       { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 }
     );
 
@@ -228,7 +233,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const pythonPath = path.resolve(__dirname, '../python/f1_data_fetcher.py');
 
     const result = execSync(
-      `${pythonExecutable} ${pythonPath} weather-analysis ${year} "${gp}" ${session}`,
+      `"${pythonExecutable}" "${pythonPath}" weather-analysis ${year} "${gp}" ${session}`,
       { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 }
     );
 
@@ -241,7 +246,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const pythonPath = path.resolve(__dirname, '../python/f1_data_fetcher.py');
 
     const result = execSync(
-      `${pythonExecutable} ${pythonPath} pitstop-analysis ${year} "${gp}" ${session}`,
+      `"${pythonExecutable}" "${pythonPath}" pitstop-analysis ${year} "${gp}" ${session}`,
       { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 }
     );
 
@@ -254,7 +259,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const pythonPath = path.resolve(__dirname, '../python/f1_data_fetcher.py');
 
     const result = execSync(
-      `${pythonExecutable} ${pythonPath} drs-analysis ${year} "${gp}" ${session} ${driver} ${lap}`,
+      `"${pythonExecutable}" "${pythonPath}" drs-analysis ${year} "${gp}" ${session} ${driver} ${lap}`,
       { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 }
     );
 
@@ -267,7 +272,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const pythonPath = path.resolve(__dirname, '../python/f1_data_fetcher.py');
 
     const result = execSync(
-      `${pythonExecutable} ${pythonPath} strategy-analysis ${year} "${gp}" ${session}`,
+      `"${pythonExecutable}" "${pythonPath}" strategy-analysis ${year} "${gp}" ${session}`,
       { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 }
     );
 
@@ -280,7 +285,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const pythonPath = path.resolve(__dirname, '../python/f1_data_fetcher.py');
 
     const result = execSync(
-      `${pythonExecutable} ${pythonPath} race-insights ${year} "${gp}" ${session}`,
+      `"${pythonExecutable}" "${pythonPath}" race-insights ${year} "${gp}" ${session}`,
       { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 }
     );
 

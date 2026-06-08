@@ -17,7 +17,7 @@ Professional Grade Formula 1 Telemetry Analysis & News Platform.
 
 2. Install Python dependencies:
    ```bash
-   pip install fastf1 pandas matplotlib numpy requests
+   pip install -r requirements.txt
    ```
 
 ### Running the Project

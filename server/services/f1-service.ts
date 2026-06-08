@@ -1,6 +1,7 @@
 import { spawn } from "child_process";
 import path from "path";
 import { F1SessionResponse, F1TelemetryResponse } from "@shared/schema";
+import { pythonExecutable } from "./python";
 
 class F1Service {
   private pythonPath: string;
@@ -8,7 +9,7 @@ class F1Service {
 
   constructor() {
     this.pythonPath = path.resolve(import.meta.dirname, "../../python/f1_data_fetcher.py");
-    this.pythonExecutable = "python3";
+    this.pythonExecutable = pythonExecutable;
   }
 
   async getSessionData(year: number, gp: string, session: string, drivers?: string[]): Promise<F1SessionResponse> {
