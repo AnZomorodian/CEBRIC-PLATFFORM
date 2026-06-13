@@ -1,5 +1,5 @@
 # Multi-stage Dockerfile for F1 Data Application
-FROM node:20-alpine AS builder
+FROM node:20-alpine3.21 AS builder
 
 # Install system dependencies and pre-built Python packages
 RUN apk add --no-cache \
@@ -36,7 +36,7 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM node:20-alpine
+FROM node:20-alpine3.21
 
 # Install runtime dependencies with pre-built packages
 RUN apk add --no-cache \
